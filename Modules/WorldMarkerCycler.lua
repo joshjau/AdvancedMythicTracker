@@ -1,11 +1,7 @@
 local addonName, AMT = ...
 local API = AMT.API
 
--- Optimization 1: Move constants to the top for better readability and potential reuse
-local TEXT_WIDTH = 200
-local DEFAULT_ORDER = { 5, 6, 3, 2, 7, 1, 4, 8 }
-
--- Optimization 2: Use local variables for frequently accessed global functions
+-- Optimization 1: Cache frequently used functions
 local CreateFrame, IsInRaid, IsInGroup, InCombatLockdown, ClearRaidMarker = CreateFrame, IsInRaid, IsInGroup, InCombatLockdown, ClearRaidMarker
 local tinsert, format, pairs, ipairs = table.insert, string.format, pairs, ipairs
 
@@ -14,7 +10,6 @@ WorldMarkerCycler:RegisterEvent("ADDON_LOADED")
 
 local order = {}
 
--- Optimization 3: Refactor Placer_Init for better performance and readability
 function WorldMarkerCycler:Placer_Init()
 	local Placer_Button = _G["WorldMarker_Placer"] or CreateFrame("Button", "WorldMarker_Placer", nil, "SecureActionButtonTemplate")
 	
@@ -42,7 +37,7 @@ function WorldMarkerCycler:Placer_Init()
 	Placer_Button:SetAttribute("WorldMarker_Current", order[1])
 	Placer_Button:SetAttribute("WorldMarker_Previous", 0)
 
-	-- Optimization: Use string concatenation instead of table creation
+	-- Optimization 2: Use string concatenation instead of table creation
 	local body = "order = " .. table.concat(order, ",")
 	SecureHandlerExecute(Placer_Button, body)
 
@@ -65,7 +60,6 @@ function WorldMarkerCycler:Placer_Init()
 	)
 end
 
--- Optimization 4: Simplify Remover_Init
 function WorldMarkerCycler:Remover_Init()
 	if _G["WorldMarker_Remover"] then return end
 
@@ -99,21 +93,24 @@ function WorldMarkerCycler:IsFocused()
 		   (self.OptionFrame and self.OptionFrame:IsShown() and self.OptionFrame:IsMouseOver())
 end
 
--- Optimization 5: Refactor ShowOptions for better performance
+-- Optimization 3: Simplify ShowOptions function
 function WorldMarkerCycler:ShowOptions(state)
-	if state then
-		self:CreateOptions()
-		for i, marker in ipairs(AMT.WorldMarkers) do
-			local checkbox = _G["AMT_Cycler_" .. marker.icon .. "_Button"]
-			checkbox:SetChecked(AMT_DB["Cycler_" .. marker.icon])
+	if not state then
+		if self.OptionFrame then
+			self.OptionFrame:Hide()
 		end
-		self.OptionFrame:Show()
-		self.OptionFrame.requireResetPosition = false
-		self.OptionFrame:ClearAllPoints()
-		self.OptionFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-	elseif self.OptionFrame then
-		self.OptionFrame:Hide()
+		return
 	end
+
+	self:CreateOptions()
+	for i, marker in ipairs(AMT.WorldMarkers) do
+		local checkbox = _G["AMT_Cycler_" .. marker.icon .. "_Button"]
+		checkbox:SetChecked(AMT_DB["Cycler_" .. marker.icon])
+	end
+	self.OptionFrame:Show()
+	self.OptionFrame.requireResetPosition = false
+	self.OptionFrame:ClearAllPoints()
+	self.OptionFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 end
 
 local function ToggleWorldMarker(self)
@@ -128,7 +125,9 @@ local function ToggleWorldMarker(self)
 	WorldMarkerCycler:Init()
 end
 
--- Optimization 6: Refactor CreateOptions for better performance and readability
+-- Optimization 4: Cache CreateAtlasMarkup function
+local CreateAtlasMarkup = CreateAtlasMarkup
+
 function WorldMarkerCycler:CreateOptions()
 	if _G["AMT_Cycler_OptionsPane"] then
 		self.OptionFrame = _G["AMT_Cycler_OptionsPane"]
