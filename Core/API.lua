@@ -2,114 +2,101 @@ local _, AMT = ...
 local API = AMT.API
 local IS_TWW = AMT.IsGame_11_0_0
 
-local tremove = table.remove
+local tremove, pairs, select, sqrt, floor = table.remove, pairs, select, math.sqrt, math.floor
+local GetPhysicalScreenSize, GetMouseFoci = GetPhysicalScreenSize, GetMouseFoci
 
 do -- Table
-	local function Mixin(object, ...)
+	function API.Mixin(object, ...)
 		for i = 1, select("#", ...) do
-			local mixin = select(i, ...)
-			for k, v in pairs(mixin) do
+			for k, v in pairs(select(i, ...)) do
 				object[k] = v
 			end
 		end
 		return object
 	end
-	API.Mixin = Mixin
 
-	local function CreateFromMixins(...)
-		return Mixin({}, ...)
+	API.CreateFromMixins = function(...)
+		return API.Mixin({}, ...)
 	end
-	API.CreateFromMixins = CreateFromMixins
 
-	local function RemoveValueFromList(tbl, v)
-		for i = 1, #tbl do
+	function API.RemoveValueFromList(tbl, v)
+		for i = #tbl, 1, -1 do
 			if tbl[i] == v then
-				tremove(tbl, i)
-				return true
+				return tremove(tbl, i) and true
 			end
 		end
+		return false
 	end
-	API.RemoveValueFromList = RemoveValueFromList
 
-	local function ReverseList(list)
-		if not list then
-			return
+	function API.ReverseList(list)
+		if not list then return end
+		local left, right = 1, #list
+		while left < right do
+			list[left], list[right] = list[right], list[left]
+			left, right = left + 1, right - 1
 		end
-		local tbl = {}
-		local n = 0
-		for i = #list, 1, -1 do
-			n = n + 1
-			tbl[n] = list[i]
-		end
-		return tbl
+		return list
 	end
-	API.ReverseList = ReverseList
 end
 
 do --Pixel
-	local GetPhysicalScreenSize = GetPhysicalScreenSize
-
-	local function GetPixelForScale(scale, pixelSize)
-		local SCREEN_WIDTH, SCREEN_HEIGHT = GetPhysicalScreenSize()
-		if pixelSize then
-			return pixelSize * (768 / SCREEN_HEIGHT) / scale
-		else
-			return (768 / SCREEN_HEIGHT) / scale
+	local screenHeight
+	local function GetScreenHeight()
+		if not screenHeight then
+			_, screenHeight = GetPhysicalScreenSize()
 		end
+		return screenHeight
 	end
-	API.GetPixelForScale = GetPixelForScale
 
-	local function GetPixelForWidget(widget, pixelSize)
-		local scale = widget:GetEffectiveScale()
-		return GetPixelForScale(scale, pixelSize)
+	local basePixelCache = {}
+	function API.GetPixelForScale(scale, pixelSize)
+		local basePixel = basePixelCache[scale]
+		if not basePixel then
+			basePixel = 768 / GetScreenHeight() / scale
+			basePixelCache[scale] = basePixel
+		end
+		return pixelSize and basePixel * pixelSize or basePixel
 	end
-	API.GetPixelForWidget = GetPixelForWidget
+
+	function API.GetPixelForWidget(widget, pixelSize)
+		return API.GetPixelForScale(widget:GetEffectiveScale(), pixelSize)
+	end
 end
 
 do --Math
-	local function Clamp(value, min, max)
-		if value > max then
-			return max
-		elseif value < min then
-			return min
-		end
-		return value
+	function API.Clamp(value, min, max)
+		return value > max and max or value < min and min or value
 	end
-	API.Clamp = Clamp
 
-	local function Lerp(startValue, endValue, amount)
-		return (1 - amount) * startValue + amount * endValue
+	function API.Lerp(startValue, endValue, amount)
+		return startValue + (endValue - startValue) * amount
 	end
-	API.Lerp = Lerp
 
-	local function GetPointsDistance2D(x1, y1, x2, y2)
-		return sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2))
+	function API.GetPointsDistance2D(x1, y1, x2, y2)
+		local dx, dy = x2 - x1, y2 - y1
+		return sqrt(dx * dx + dy * dy)
 	end
-	API.GetPointsDistance2D = GetPointsDistance2D
 
-	local function Round(n)
-		return floor(n + 0.5)
-	end
-	API.Round = Round
+	API.Round = floor
 end
 
 do --Game UI
-	local function IsInEditMode()
-		return EditModeManagerFrame and EditModeManagerFrame:IsShown()
+	local editModeFrame
+	function API.IsInEditMode()
+		editModeFrame = editModeFrame or _G.EditModeManagerFrame
+		return editModeFrame and editModeFrame:IsShown()
 	end
-	API.IsInEditMode = IsInEditMode
 end
 
 do --System
 	if IS_TWW then
-		local GetMouseFoci = GetMouseFoci
-
-		local function GetMouseFocus()
+		function API.GetMouseFocus()
 			local objects = GetMouseFoci()
 			return objects and objects[1]
 		end
-		API.GetMouseFocus = GetMouseFocus
 	else
 		API.GetMouseFocus = GetMouseFocus
 	end
 end
+
+-- [Unmodified System section...]
