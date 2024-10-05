@@ -1,14 +1,39 @@
 local addonName, AMT = ...
 local API = AMT.API
 
+-- Optimization 1: Cache more frequently used functions and values
+local CreateFrame = CreateFrame
+local CreateAtlasMarkup = CreateAtlasMarkup
+local GetInstanceInfo = GetInstanceInfo
+local GetNumGroupMembers = GetNumGroupMembers
+local UnitName = UnitName
+local UnitGroupRolesAssigned = UnitGroupRolesAssigned
+local IsInInstance = IsInInstance
+local IsInGroup = IsInGroup
+local IsInRaid = IsInRaid
+local C_Timer = C_Timer
+local wipe = wipe
+local tinsert = table.insert
+local sort = table.sort
+local unpack = unpack
+local Round = Round
+local math_abs = math.abs
+
 local TEXT_WIDTH = 200
 local DEFAULT_POSITION_Y = 400
 
+-- Optimization 2: Use upvalues for frequently accessed AMT properties
+local BackgroundClear = AMT.BackgroundClear
+local AMT_Font = AMT.AMT_Font
+local GroupKeystone_Info = AMT.GroupKeystone_Info
+local PrintDebug = AMT.PrintDebug
+
+-- Optimization 3: Preallocate frames
 local WorldChange_EventListenerFrame = CreateFrame("Frame")
 local PartyKeystone_EventListenerFrame = CreateFrame("Frame")
+local GroupKeysFrame = CreateFrame("Button", nil, UIParent)
 
 -- Create a font string to display the message
-local GroupKeysFrame = CreateFrame("Button", nil, UIParent)
 GroupKeysFrame:SetSize(380, 250)
 GroupKeysFrame.tex = GroupKeysFrame:CreateTexture()
 GroupKeysFrame.tex:SetAllPoints(GroupKeysFrame)
@@ -94,15 +119,21 @@ end
 
 local PartyKeystones_Text = {}
 
--- Function to show and hide the message
+-- Optimization 4: Use a local table for role art mapping
+local roleArtMap = {
+	TANK = "GM-icon-role-tank",
+	HEALER = "GM-icon-role-healer",
+	DAMAGER = "GM-icon-role-dps",
+}
+
+-- Optimization 5: Improve ShowRelevantKeysMessage function
 local function ShowRelevantKeysMessage()
-	wipe(PartyKeystones_Text or {})
+	wipe(PartyKeystones_Text)
 	AMT:AMT_KeystoneRefresh()
-	local _, _, _, _, _, _, _, CurrentInstanceID, _, _ = GetInstanceInfo()
+	local _, _, _, _, _, _, _, CurrentInstanceID = GetInstanceInfo()
 	local RelevantKeystones = {}
-	wipe(RelevantKeystones or {})
-	--Grab relevant keystones into a separate table
-	for _, key in ipairs(AMT.GroupKeystone_Info) do
+
+	for _, key in ipairs(GroupKeystone_Info) do
 		if key.instanceID == CurrentInstanceID then
 			tinsert(RelevantKeystones, {
 				level = key.level,
@@ -117,49 +148,29 @@ local function ShowRelevantKeysMessage()
 			})
 		end
 	end
-	--Sort the keys found from highest to lowest
+
 	if #RelevantKeystones > 1 then
-		table.sort(RelevantKeystones, function(a, b)
-			return b.level < a.level
-		end)
+		sort(RelevantKeystones, function(a, b) return a.level > b.level end)
 	end
 
 	local GroupSize = GetNumGroupMembers()
-	local SelectedPlayer = {}
-	wipe(SelectedPlayer or {})
-	if GroupSize > 0 then
-		for i = 1, GroupSize do
-			if i == 1 then
-				SelectedPlayer[i] = "player"
-			else
-				SelectedPlayer[i] = "party" .. i - 1
-			end
-		end
+	local SelectedPlayer = GroupSize > 0 and {"player"} or {}
+	for i = 2, GroupSize do
+		tinsert(SelectedPlayer, "party" .. (i - 1))
 	end
-	--Grab every players role (TANK, DAMAGER, HEALER)
-	if #SelectedPlayer > 0 then
-		for _, player in ipairs(RelevantKeystones) do
-			for i = 1, #SelectedPlayer do
-				local playerName, _ = UnitName(SelectedPlayer[i])
-				local playerRole = UnitGroupRolesAssigned(SelectedPlayer[i])
-				if playerName == player.playerName then
-					player.playerRole = playerRole
-				end
-			end
-		end
-	end
-	--Assign the atlas art that will be used alongside player names
+
 	for _, player in ipairs(RelevantKeystones) do
-		if player.playerRole == "TANK" then
-			player.playerRoleArt = "GM-icon-role-tank"
-		elseif player.playerRole == "HEALER" then
-			player.playerRoleArt = "GM-icon-role-healer"
-		elseif player.playerRole == "DAMAGER" then
-			player.playerRoleArt = "GM-icon-role-dps"
+		for i = 1, #SelectedPlayer do
+			local playerName = UnitName(SelectedPlayer[i])
+			if playerName == player.playerName then
+				local playerRole = UnitGroupRolesAssigned(SelectedPlayer[i])
+				player.playerRole = playerRole
+				player.playerRoleArt = roleArtMap[playerRole] or ""
+				break
+			end
 		end
 	end
 
-	--Set the Player Name and Key Level Text
 	for i = 1, 5 do
 		local PlayerName = _G["AMT_PartyKeystone_NameText" .. i]
 		local KeyLevel = _G["AMT_PartyKeystone_KeyLevelText" .. i]
@@ -177,7 +188,7 @@ local function ShowRelevantKeysMessage()
 		GroupKeysFrame:Show()
 		C_Timer.After(30, function()
 			GroupKeysFrame:Hide()
-			AMT:PrintDebug("Hiding GroupKeysFrame")
+			PrintDebug("Hiding GroupKeysFrame")
 		end)
 	end
 end
@@ -221,6 +232,7 @@ ADDON_LOADED:SetScript("OnEvent", function(self, event, ...)
 	end
 end)
 
+-- Optimization 6: Simplify GroupKeysFrame methods
 function GroupKeysFrame:OnDragStart()
 	self:SetMovable(true)
 	self:SetDontSavePosition(true)
@@ -231,19 +243,15 @@ end
 function GroupKeysFrame:OnDragStop()
 	self:StopMovingOrSizing()
 
-	local centerX = self:GetCenter()
-	local uiCenter = UIParent:GetCenter()
-	local left = self:GetLeft()
-	local top = self:GetTop()
+	local centerX, centerY = self:GetCenter()
+	local uiCenterX, uiCenterY = UIParent:GetCenter()
+	local left, top = self:GetLeft(), self:GetTop()
 
-	left = Round(left)
-	top = Round(top)
+	left, top = Round(left), Round(top)
 
 	self:ClearAllPoints()
 
-	--Convert anchor and save position
-	if math.abs(uiCenter - centerX) <= 48 then
-		--Snap to centeral line
+	if math_abs(uiCenterX - centerX) <= 48 then
 		self:SetPoint("TOP", UIParent, "BOTTOM", 0, top)
 		AMT_DB.GroupKeysFrame_PositionX = -1
 	else
@@ -254,9 +262,7 @@ function GroupKeysFrame:OnDragStop()
 
 	if self.OptionFrame then
 		local button = self.OptionFrame:FindWidget("ResetButton")
-		if button then
-			button:Enable()
-		end
+		if button then button:Enable() end
 	end
 end
 
@@ -267,17 +273,12 @@ end
 
 function GroupKeysFrame:LoadPosition()
 	self:ClearAllPoints()
-	if AMT_DB.GroupKeysFrame_PositionX and AMT_DB.GroupKeysFrame_PositionY then
-		if AMT_DB.GroupKeysFrame_PositionX > 0 then
-			self:SetPoint(
-				"TOPLEFT",
-				UIParent,
-				"BOTTOMLEFT",
-				AMT_DB.GroupKeysFrame_PositionX,
-				AMT_DB.GroupKeysFrame_PositionY
-			)
+	local x, y = AMT_DB.GroupKeysFrame_PositionX, AMT_DB.GroupKeysFrame_PositionY
+	if x and y then
+		if x > 0 then
+			self:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y)
 		else
-			self:SetPoint("TOP", UIParent, "BOTTOM", 0, AMT_DB.GroupKeysFrame_PositionY)
+			self:SetPoint("TOP", UIParent, "BOTTOM", 0, y)
 		end
 	else
 		self:SetPoint("CENTER", UIParent, "CENTER", 0, DEFAULT_POSITION_Y)
@@ -408,16 +409,16 @@ function GroupKeysFrame:DisableShowKeys()
 	self.enabled = false
 end
 
+-- Optimization 7: Simplify module registration
 do
 	local function EnableModule(state)
 		if state then
 			GroupKeysFrame:EnableShowKeys()
 			AMT.DefaultValues["ShowRelevantKeys"] = not AMT.DefaultValues["ShowRelevantKeys"]
-			AMT:PrintDebug("ShowRelevantKeys = " .. tostring(AMT.db["ShowRelevantKeys"]))
 		else
 			GroupKeysFrame:DisableShowKeys()
-			AMT:PrintDebug("ShowRelevantKeys = " .. tostring(AMT.db["ShowRelevantKeys"]))
 		end
+		PrintDebug("ShowRelevantKeys = " .. tostring(AMT.db["ShowRelevantKeys"]))
 	end
 
 	local function OptionToggle_OnClick(self, button)
@@ -430,15 +431,13 @@ do
 		end
 	end
 
-	local moduleData = {
+	AMT.Config:AddModule({
 		name = "Show Relevant Mythic+ Keys",
 		dbKey = "ShowRelevantKeys",
-		description = "When a ready check is initated while inside of a dungeon, if you or party members have an eligible Mythic+ Keystone the list of these players and key levels will be displayed on screen\nRight click the pop-up to hide it.",
+		description = "When a ready check is initiated while inside of a dungeon, if you or party members have an eligible Mythic+ Keystone the list of these players and key levels will be displayed on screen\nRight click the pop-up to hide it.",
 		toggleFunc = EnableModule,
 		categoryID = 2,
 		uiOrder = 1,
 		optionToggleFunc = OptionToggle_OnClick,
-	}
-
-	AMT.Config:AddModule(moduleData)
+	})
 end
