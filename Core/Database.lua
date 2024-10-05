@@ -66,7 +66,7 @@ function AMT:LoadDatabase()
 		end
 	end
 
-	local function GetDBValue(dbKeyPath)
+	function self.GetDBValue(dbKeyPath)
 		local keys = { strsplit(".", dbKeyPath) }
 		local value = self.db
 
@@ -79,9 +79,8 @@ function AMT:LoadDatabase()
 
 		return value
 	end
-	self.GetDBValue = GetDBValue
 
-	local function SetDBValue(dbKeyPath, newValue)
+	function self.SetDBValue(dbKeyPath, newValue)
 		local keys = { strsplit(".", dbKeyPath) }
 		local dbRef = self.db
 
@@ -96,30 +95,36 @@ function AMT:LoadDatabase()
 		dbRef[keys[#keys]] = newValue
 		return true
 	end
-	self.SetDBValue = SetDBValue
 
 	DefaultValues = nil
 	self.dbLoaded = true
 end
 
-local ADDON_LOADED = CreateFrame("Frame")
-ADDON_LOADED:RegisterEvent("ADDON_LOADED")
-ADDON_LOADED:RegisterEvent("PLAYER_ENTERING_WORLD")
-
-ADDON_LOADED:SetScript("OnEvent", function(self, event, ...)
-	local name = ...
+local function OnAddonLoaded(self, event, name)
 	if name == addonName then
 		self:UnregisterEvent(event)
 		AMT:LoadDatabase()
 		AMT:PrintDebug("Unregistering " .. event)
 	end
-	if event == "PLAYER_ENTERING_WORLD" then
-		if RaiderIO then
-			AMT.RaiderIOEnabled = true
-			AMT:PrintDebug("RaiderIO found")
-		end
-		self:UnregisterEvent(event)
-		AMT:PrintDebug("Unregistering " .. event)
+end
+
+local function OnPlayerEnteringWorld(self, event)
+	AMT.RaiderIOEnabled = RaiderIO ~= nil
+	if AMT.RaiderIOEnabled then
+		AMT:PrintDebug("RaiderIO found")
+	end
+	self:UnregisterEvent(event)
+	AMT:PrintDebug("Unregistering " .. event)
+end
+
+local ADDON_LOADED = CreateFrame("Frame")
+ADDON_LOADED:RegisterEvent("ADDON_LOADED")
+ADDON_LOADED:RegisterEvent("PLAYER_ENTERING_WORLD")
+ADDON_LOADED:SetScript("OnEvent", function(self, event, ...)
+	if event == "ADDON_LOADED" then
+		OnAddonLoaded(self, event, ...)
+	elseif event == "PLAYER_ENTERING_WORLD" then
+		OnPlayerEnteringWorld(self, event)
 	end
 end)
 
@@ -133,34 +138,35 @@ AMT.RaiderIOEnabled = false
 AMT.DebugMode = false
 
 if ElvUI then
-	AMT.ElvUIEnabled = true -- ElvUI Enabled
-	AMT.E = unpack(ElvUI) -- ElvUI Functions
-	AMT.S = ElvUI[1]:GetModule("Skins") -- ElvUI Skinning
+	AMT.ElvUIEnabled = true
+	AMT.E = unpack(ElvUI)
+	AMT.S = ElvUI[1]:GetModule("Skins")
 end
 
 if Details then
-	AMT.DetailsEnabled = true -- Details Enabled
-	AMT.OpenRaidLib = LibStub("LibOpenRaid-1.0", true) -- Call OpenRaidLib functions
+	AMT.DetailsEnabled = true
+	AMT.OpenRaidLib = LibStub("LibOpenRaid-1.0", true)
 end
 
+-- Constants
 AMT.Vault_BoxSize = 14
-AMT.Vault_RaidReq = 6 -- Number of Raid kills required for max rewards
-AMT.Vault_DungeonReq = 8 -- Number of Dungeon completions required for max rewards
-AMT.Vault_WorldReq = 8 -- Number of Delves or World Activities required for max rewards
-AMT.Mplus_VaultUnlocks = {} -- Breakthrough Numbers for each Vault Reward for M+
-AMT.Raid_VaultUnlocks = {} -- Breakthrough Numbers for each Vault Reward for Raid
-AMT.World_VaultUnlocks = {} -- Breakthrough Numbers for each Vault Reward for World
+AMT.Vault_RaidReq = 6
+AMT.Vault_DungeonReq = 8
+AMT.Vault_WorldReq = 8
+AMT.Mplus_VaultUnlocks = {}
+AMT.Raid_VaultUnlocks = {}
+AMT.World_VaultUnlocks = {}
 AMT.World_VaultTracker = 0
-AMT.GetCurrentAffixesTable = C_MythicPlus.GetCurrentAffixes() or {} --Current Affix Raw Table
-AMT.CurrentWeek_AffixTable = {} --Cleaned Affix Table
-AMT.NextWeek_AffixTable = {} --Next Week's Affix Table
+AMT.GetCurrentAffixesTable = C_MythicPlus.GetCurrentAffixes() or {}
+AMT.CurrentWeek_AffixTable = {}
+AMT.NextWeek_AffixTable = {}
 AMT.RaidVault_Bosses = C_WeeklyRewards.GetActivityEncounterInfo(3, 1)
-AMT.Player_Mplus_Summary = C_PlayerInfo.GetPlayerMythicPlusRatingSummary("player") --Raw Player M+ Summary
-AMT.Player_Mplus_ScoreColor = nil --M+ Score Color
-AMT.RunHistory = {} --M+ runs history
-AMT.KeysDone = {} --Cleaned M+ runs history
-AMT.Current_SeasonalDung_Info = {} --Current M+ dungeons info
-AMT.BestKeys_per_Dungeon = {} --Highest keys done per M+ dungeon
+AMT.Player_Mplus_Summary = C_PlayerInfo.GetPlayerMythicPlusRatingSummary("player")
+AMT.Player_Mplus_ScoreColor = nil
+AMT.RunHistory = {}
+AMT.KeysDone = {}
+AMT.Current_SeasonalDung_Info = {}
+AMT.BestKeys_per_Dungeon = {}
 AMT.GroupKeystone_Info = {}
 AMT.SeasonalRaids = {}
 AMT.Raid_Progress = {}
@@ -170,51 +176,32 @@ AMT.Clean_StatusBar = "Interface/AddOns/AdvancedMythicTracker/Media/StatusBar/AM
 AMT.Keystone_Icon = "Interface/AddOns/AdvancedMythicTracker/Media/Icons/Keystone_Hourglass"
 AMT.Tab = "          "
 AMT.Whitetext = "|cffffffff"
-AMT.BackgroundClear = { 1, 1, 1, 0.0 } --Clear Background
-AMT.BackgroundDark = { 0, 0, 0, 0.25 } --Slightly Dark Background
-AMT.BackgroundHover = { 1, 1, 1, 0.25 } --Hovered white color Background
+AMT.BackgroundClear = { 1, 1, 1, 0.0 }
+AMT.BackgroundDark = { 0, 0, 0, 0.25 }
+AMT.BackgroundHover = { 1, 1, 1, 0.25 }
 AMT.Uncommon_Color = { 0.118, 0.900, 0.000, 1.000 }
 AMT.Rare_Color = { 0.000, 0.569, 0.949, 1.000 }
 AMT.Epic_Color = { 0.639, 0.208, 0.933, 1.000 }
 AMT.Legendary_Color = { 1.000, 0.502, 0.000, 1.000 }
+
 -- ==============================
 -- === Shortcuts and Keybinds ===
 -- ==============================
-_G["BINDING_NAME_AMT"] = "Toggle AMT Window" -- Keybind option name
-_G["BINDING_NAME_CLICK WorldMarker_Placer:LeftButton"] = "World Marker Cycler" -- Keybind for Cycling through World Markers
-_G["BINDING_NAME_CLICK WorldMarker_Remover:LeftButton"] = "World Marker Erase" -- Keybind for Cycling through World Markers
+_G["BINDING_NAME_AMT"] = "Toggle AMT Window"
+_G["BINDING_NAME_CLICK WorldMarker_Placer:LeftButton"] = "World Marker Cycler"
+_G["BINDING_NAME_CLICK WorldMarker_Remover:LeftButton"] = "World Marker Erase"
 
 -- ===================
 -- === Data Tables ===
 -- ===================
 
---Custom PVEFrame Tabs
+-- Custom PVEFrame Tabs
 AMT.PVEFrame_Panels = {
-	{
-		text = "Dungeons & Raids",
-		frameName = "GroupFinderFrame",
-		isVisible = true,
-	},
-	{
-		text = "Player vs. Player",
-		frameName = "PVPUIFrame",
-		isVisible = true,
-	},
-	{
-		text = "Mythic+ Dungeons",
-		frameName = "ChallengesFrame",
-		isVisible = false,
-	},
-	{
-		text = "Delves",
-		frameName = "DelvesDashboardFrame",
-		isVisible = true,
-	},
-	{
-		text = "Advanced Mythic Tracker",
-		frameName = "AMT_Window",
-		isVisible = false,
-	},
+	{ text = "Dungeons & Raids", frameName = "GroupFinderFrame", isVisible = true },
+	{ text = "Player vs. Player", frameName = "PVPUIFrame", isVisible = true },
+	{ text = "Mythic+ Dungeons", frameName = "ChallengesFrame", isVisible = false },
+	{ text = "Delves", frameName = "DelvesDashboardFrame", isVisible = true },
+	{ text = "Advanced Mythic Tracker", frameName = "AMT_Window", isVisible = false },
 }
 
 -- Rewards table for each key level
@@ -283,6 +270,7 @@ AMT.RewardsTable = {
 		VaultUpgradeTrack = "Myth 1/6",
 	},
 }
+
 -- Dungeon info by expansion
 AMT.SeasonalDungeons = {
 	--The War Within

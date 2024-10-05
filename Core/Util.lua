@@ -10,24 +10,189 @@ function AMT:PrintDebug(str)
 end
 
 -- Function to update the highest key for a dungeon
+-- Optimized for O(1) lookup time
 function AMT:UpdateHighestKey(dungeonAbbr, keylevel)
-	for _, dungeon in ipairs(self.BestKeys_per_Dungeon) do
-		AMT:PrintDebug("Checking dungeon: " .. dungeon.dungAbbr) -- Debug print
-		if dungeon.dungAbbr == dungeonAbbr then
-			dungeon.HighestKey = tonumber(keylevel)
-			local KeyBullets = ""
-			local BulletTemplate = "• "
-			for i = 1, keylevel do
-				KeyBullets = KeyBullets .. BulletTemplate
-			end
-			dungeon.DungBullets = KeyBullets
-			AMT:PrintDebug("Updated " .. dungeon.dungAbbr .. " with key level " .. keylevel)
-			AMT:AMT_UpdateMythicGraph()
-			return
-		end
-	end
-	AMT:PrintDebug("Dungeon abbreviation not found: " .. dungeonAbbr)
+    -- Create a lookup table for dungeons if it doesn't exist
+    if not self.dungeonLookup then
+        self.dungeonLookup = {}
+        for _, dungeon in ipairs(self.BestKeys_per_Dungeon) do
+            self.dungeonLookup[dungeon.dungAbbr] = dungeon
+        end
+    end
+
+    local dungeon = self.dungeonLookup[dungeonAbbr]
+    if dungeon then
+        dungeon.HighestKey = tonumber(keylevel)
+        dungeon.DungBullets = ("• "):rep(keylevel)
+        AMT:PrintDebug("Updated " .. dungeon.dungAbbr .. " with key level " .. keylevel)
+        AMT:AMT_UpdateMythicGraph()
+    else
+        AMT:PrintDebug("Dungeon abbreviation not found: " .. dungeonAbbr)
+    end
 end
+
+-- [Unmodified code...]
+
+-- Optimized function to update affix information
+function AMT:AMT_UpdateAffixInformation()
+    wipe(self.CurrentWeek_AffixTable or {})
+    self.GetCurrentAffixesTable = C_MythicPlus.GetCurrentAffixes() or {}
+
+    if #self.GetCurrentAffixesTable > 0 then
+        local currentRotation = {
+            self.GetCurrentAffixesTable[1].id,
+            self.GetCurrentAffixesTable[2].id,
+            self.GetCurrentAffixesTable[3].id,
+            self.GetCurrentAffixesTable[4].id,
+            self.GetCurrentAffixesTable[5].id,
+        }
+        self.CurrentWeek_AffixTable[1] = currentRotation
+
+        -- Find the index of the current rotation and determine the next one
+        for i, rotationInfo in ipairs(self.AffixRotation) do
+            if AMT:CompareArrays(rotationInfo.rotation, currentRotation) then
+                local nextIndex = (i % #self.AffixRotation) + 1
+                NextWeek_AffixTable = { self.AffixRotation[nextIndex].rotation }
+                return
+            end
+        end
+    end
+
+    NextWeek_AffixTable = nil
+end
+
+-- [Unmodified code...]
+
+-- Optimized function to refresh party keystone information
+function AMT:AMT_PartyKeystoneRefresh()
+    wipe(self.GroupKeystone_Info or {})
+    if not self.DetailsEnabled or UnitInRaid("player") then return end
+
+    for i = 1, 5 do
+        local unitID = i == 1 and "player" or "party" .. (i - 1)
+        local data = self.OpenRaidLib.GetKeystoneInfo(unitID)
+        local mapID = data and data.challengeMapID
+        local dungeon = mapID and AMT:Find_Dungeon(mapID)
+        
+        if dungeon then
+            local level = data.level
+            local playerClass = UnitClassBase(unitID)
+            local playerName = UnitName(unitID)
+            local texture = select(4, C_ChallengeMode.GetMapUIInfo(mapID))
+
+            tinsert(self.GroupKeystone_Info, {
+                level = level,
+                name = dungeon.abbr,
+                player = AMT_ClassColorString(playerName, playerClass),
+                icon = texture,
+            })
+        end
+    end
+
+    if #self.GroupKeystone_Info > 1 then
+        table.sort(self.GroupKeystone_Info, function(a, b) return b.level < a.level end)
+    end
+
+    -- Update UI elements
+    for i = 1, 5 do
+        local left_text = _G["AMT_PartyKeystyone_Left" .. i]
+        local right_text = _G["AMT_PartyKeystyone_Right" .. i]
+        local info = self.GroupKeystone_Info[i]
+        
+        if info then
+            right_text:SetText(info.player)
+            left_text:SetText(format(
+                "|T%s:16:16:0:0:64:64:4:60:7:57:255:255:255|t |c%s%s - %s|r",
+                info.icon,
+                AMT_getKeystoneLevelColor(info.level),
+                info.level,
+                info.name
+            ))
+        else
+            right_text:SetText("")
+            left_text:SetText("")
+        end
+    end
+end
+
+-- [Unmodified code...]
+
+-- Optimized function to update player dungeon information
+function AMT:Update_PlayerDungeonInfo()
+    -- Reset tables
+    wipe(self.KeysDone or {})
+    wipe(self.BestKeys_per_Dungeon or {})
+    wipe(self.Current_SeasonalDung_Info or {})
+    wipe(self.RunHistory or {})
+
+    -- Fetch run history and vault info
+    self.RunHistory = C_MythicPlus.GetRunHistory(false, true)
+    local VaultInfo = C_WeeklyRewards.GetActivities()
+
+    -- Process run history
+    for _, run in ipairs(self.RunHistory) do
+        tinsert(self.KeysDone, { level = run.level, keyid = run.mapChallengeModeID, keyname = "" })
+    end
+
+    -- Sort keys and add dungeon names
+    if #self.KeysDone > 0 then
+        table.sort(self.KeysDone, function(a, b) return b.level > a.level end)
+        for _, entry in ipairs(self.KeysDone) do
+            local dungeon = AMT:Find_Dungeon(entry.keyid)
+            if dungeon then
+                entry.keyname = dungeon.name
+            end
+        end
+    else
+        self.KeysDone = { 0 }
+    end
+
+    -- Process current season map info
+    local currentSeasonMap = C_ChallengeMode.GetMapTable()
+    for _, dungeonID in ipairs(currentSeasonMap) do
+        local name, _, _, icon = C_ChallengeMode.GetMapUIInfo(dungeonID)
+        local affixScores, bestOverAllScore = C_MythicPlus.GetSeasonBestAffixScoreInfoForMap(dungeonID)
+        local intimeInfo, overtimeInfo = C_MythicPlus.GetSeasonBestForMap(dungeonID)
+
+        local dungInfo = {
+            mapID = dungeonID,
+            dungName = name,
+            dungIcon = icon,
+            dungOverallScore = bestOverAllScore or 0,
+            dungTyrScore = affixScores and affixScores[1] and affixScores[1].score or 0,
+            dungFortScore = affixScores and affixScores[2] and affixScores[2].score or 0,
+            dungTyrLevel = affixScores and affixScores[1] and affixScores[1].level or 0,
+            dungFortLevel = affixScores and affixScores[2] and affixScores[2].level or 0,
+            intimeInfo = intimeInfo,
+            overtimeInfo = overtimeInfo,
+        }
+        tinsert(self.Current_SeasonalDung_Info, dungInfo)
+
+        local dungeon = AMT:Find_Dungeon(dungeonID)
+        if dungeon then
+            tinsert(self.BestKeys_per_Dungeon, {
+                mapID = dungeonID,
+                dungAbbr = dungeon.abbr,
+                HighestKey = 0,
+                DungBullets = "",
+            })
+        end
+    end
+
+    -- Update BestKeys_per_Dungeon
+    for _, bestKey in ipairs(self.BestKeys_per_Dungeon) do
+        local highestKey = 0
+        for _, key in ipairs(self.KeysDone) do
+            if key.keyid == bestKey.mapID and key.level > highestKey then
+                highestKey = key.level
+            end
+        end
+        bestKey.HighestKey = highestKey
+        bestKey.DungBullets = ("• "):rep(highestKey)
+    end
+end
+
+-- [Unmodified code...]
 
 --Check Number of Tabs displayed on PVEFrame
 function AMT:Check_PVEFrame_TabNums()
