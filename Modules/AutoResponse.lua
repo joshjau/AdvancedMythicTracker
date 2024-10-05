@@ -4,19 +4,74 @@ local API = AMT.API
 local Mplus_AutoResponse = CreateFrame("Frame")
 Mplus_AutoResponse.isLoaded = false
 
+-- Optimization 1: Use local variables for frequently accessed global functions
+local select, GetTime, C_ChallengeMode, C_Scenario, C_ScenarioInfo, BNSendWhisper, SendChatMessage, UnitInRaid, UnitInParty, IsGuildMember, BNIsSelf, math = 
+    select, GetTime, C_ChallengeMode, C_Scenario, C_ScenarioInfo, BNSendWhisper, SendChatMessage, UnitInRaid, UnitInParty, IsGuildMember, BNIsSelf, math
+
+-- Optimization 6: Use local variables for frequently accessed table fields
+local runInfo = Mplus_AutoResponse.runInfo
+local responseTarget = Mplus_AutoResponse.responseTarget
+
+-- Optimization 7: Cache frequently accessed functions
+local CreateFrame, Ambiguate, C_BattleNet, C_FriendList = CreateFrame, Ambiguate, C_BattleNet, C_FriendList
+
+-- Optimization 8: Use upvalues for frequently accessed global variables
+local AMT_DB = AMT_DB
+
+-- Optimization 11: Use a local variable for frequently accessed AMT methods
+local AMTPrintDebug = AMT.PrintDebug
+local AMTFindDungeon = AMT.Find_Dungeon
+
+-- Optimization 12: Implement a more efficient string concatenation method
+local function concat(...)
+    local t = {}
+    for i = 1, select("#", ...) do
+        t[i] = tostring(select(i, ...))
+    end
+    return table.concat(t)
+end
+
+-- Optimization 13: Cache frequently accessed string patterns
+local spamPatterns = {
+    "^<M%+ Auto Response>",
+    "^<Deadly Boss Mods>",
+    "^<DBM>",
+    "^%[BigWigs%]",
+}
+
+-- Optimization 16: Use a local variable for frequently accessed Mplus_AutoResponse fields
+local MplusAR = Mplus_AutoResponse
+local MplusAR_runInfo = MplusAR.runInfo
+local MplusAR_responseTarget = MplusAR.responseTarget
+
+-- Optimization 17: Implement a more efficient method for checking completion status
+local function IsKeyCompleted()
+    return select(3, C_Scenario.GetInfo()) == LE_SCENARIO_TYPE_CHALLENGE_MODE and select(3, C_Scenario.GetStepInfo()) == 0
+end
+
+-- Optimization 18: Use a local cache for frequently accessed AMT_DB values
+local cachedAMT_DB = setmetatable({}, {
+    __index = function(t, k)
+        local v = AMT_DB[k]
+        t[k] = v
+        return v
+    end
+})
+
+local function UpdateCachedAMT_DB()
+    for k in pairs(cachedAMT_DB) do
+        cachedAMT_DB[k] = nil
+    end
+end
+
 function Mplus_AutoResponse:Init()
 	if Mplus_AutoResponse.isLoaded then
-		AMT:PrintDebug("Mplus_AutoResponse already initialized")
+		AMTPrintDebug("Mplus_AutoResponse already initialized")
 		return
 	else
-		AMT:PrintDebug("Mplus_AutoResponse initialized")
+		AMTPrintDebug("Mplus_AutoResponse initialized")
 		Mplus_AutoResponse.prefix = "<M+ Auto Response>"
-		Mplus_AutoResponse.spamBase = {
-			"^" .. Mplus_AutoResponse.prefix,
-			"^<Deadly Boss Mods>",
-			"^<DBM>",
-			"^%[BigWigs%]",
-		}
+		Mplus_AutoResponse.spamBase = spamPatterns
 		Mplus_AutoResponse.whoToReplyTo = {
 			[1] = "Friends Only",
 			[2] = "Friends and Guild Mates",
@@ -62,10 +117,13 @@ end
 -- MARK: === Utilities ===
 -- =======================
 
+-- Optimization 2: Use a local variable for string.sub
+local stringsub = string.sub
+
 function Mplus_AutoResponse.UpdateProgress()
 	local elapsedTime = select(2, GetWorldElapsedTime(1))
 	if not Mplus_AutoResponse.started or not Mplus_AutoResponse.isActive or elapsedTime <= 0 then
-		AMT:PrintDebug("not in mplus")
+		AMTPrintDebug("not in mplus")
 		return false
 	end
 
@@ -79,7 +137,7 @@ function Mplus_AutoResponse.UpdateProgress()
 	local quantityString = scenarioCriteriaInfo.quantityString
 
 	if quantityString then
-		local currentQuantity = tonumber(string.sub(quantityString, 1, string.len(quantityString) - 1)) or 0
+		local currentQuantity = tonumber(stringsub(quantityString, 1, stringsub(quantityString, 1, -2))) or 0
 		Mplus_AutoResponse.runInfo.progressTrash = ((currentQuantity / totalQuantity) * 100) or 0
 	end
 
@@ -95,78 +153,60 @@ function Mplus_AutoResponse.UpdateProgress()
 	return true
 end
 
+-- Optimization 14: Use a more efficient method for checking if a player is in group
+local function IsPlayerInGroup(player)
+	return UnitInParty(player) or UnitInRaid(player)
+end
+
+-- Optimization 15: Implement a more efficient method for creating responses
+local function CreateResponseString(keyLevel, keystoneName, timeInfo, trashInfo, bossInfo, deathInfo)
+	local parts = {
+		concat("+", keyLevel, " - ", keystoneName),
+		timeInfo,
+		trashInfo,
+		bossInfo,
+		deathInfo
+	}
+	return concat(Mplus_AutoResponse.prefix, " I'm busy in Mythic Keystone: ", table.concat(parts, " - "))
+end
+
 function Mplus_AutoResponse.CreateResponse(target, completed)
-	if not Mplus_AutoResponse.started or not Mplus_AutoResponse.runInfo.challengeMapId then
-		-- If we're not in a key, return nil
+	if not MplusAR.started or not MplusAR_runInfo.challengeMapId then
 		return nil
 	end
 
 	local replyInfo
-	if target == Mplus_AutoResponse.responseTarget.friend then
-		replyInfo = AMT_DB.replyInfoFriend
-	elseif target == Mplus_AutoResponse.responseTarget.guild then
-		replyInfo = AMT_DB.replyInfoGuild
-	elseif target == Mplus_AutoResponse.responseTarget.unknown then
-		replyInfo = AMT_DB.replyInfoUnknown
+	if target == MplusAR_responseTarget.friend then
+		replyInfo = MplusAR.cachedReplyInfoFriend
+	elseif target == MplusAR_responseTarget.guild then
+		replyInfo = MplusAR.cachedReplyInfoGuild
+	elseif target == MplusAR_responseTarget.unknown then
+		replyInfo = MplusAR.cachedReplyInfoUnknown
 	else
-		do
-			return nil
-		end
+		return nil
 	end
 
-	local _, _, maxTime = C_ChallengeMode.GetMapUIInfo(Mplus_AutoResponse.runInfo.challengeMapId)
-	local response = "+"
-		.. Mplus_AutoResponse.runInfo.keyLevel
-		.. " - "
-		.. Mplus_AutoResponse.GetKeystoneName(AMT_DB.replyKeystoneNameType)
-	local elapsedTime = GetTime() - Mplus_AutoResponse.runInfo.startTime
-	local deaths = Mplus_AutoResponse.runInfo.deaths or 0
+	local _, _, maxTime = C_ChallengeMode.GetMapUIInfo(MplusAR_runInfo.challengeMapId)
+	local keyLevel = MplusAR_runInfo.keyLevel
+	local keystoneName = MplusAR.GetKeystoneName(cachedAMT_DB.replyKeystoneNameType)
+	local elapsedTime = GetTime() - MplusAR_runInfo.startTime
+	local deaths = MplusAR_runInfo.deaths or 0
 
 	if completed then
-		if AMT_DB.replyInfoFriend["Time"] then
+		if replyInfo["Time"] then
 			local time, onTime, keystoneUpgradeLevels = select(3, C_ChallengeMode.GetCompletionInfo())
-			response = response
-				.. " - "
-				.. Mplus_AutoResponse.FormatSecond(time / 1000)
-				.. "/"
-				.. Mplus_AutoResponse.FormatSecond(maxTime)
-			if onTime then
-				response = response .. " (+" .. keystoneUpgradeLevels .. ")"
-			else
-				response = response .. " (ruined)"
-			end
-			if AMT_DB.replyInfoFriend["Deaths"] then
-				response = response .. " - " .. deaths .. " deaths"
-			end
+			local timeInfo = concat(MplusAR.FormatSecond(time / 1000), "/", MplusAR.FormatSecond(maxTime))
+			local upgradeInfo = onTime and concat(" (+", keystoneUpgradeLevels, ")") or " (ruined)"
+			local deathInfo = replyInfo["Deaths"] and concat(deaths, " deaths") or nil
+			return concat(MplusAR.prefix, " I've finished Mythic Keystone: +", keyLevel, " - ", keystoneName, " - ", timeInfo, upgradeInfo, deathInfo)
 		end
-		do
-			return Mplus_AutoResponse.prefix .. " I've finished Mythic Keystone: " .. response
-		end
+		return concat(MplusAR.prefix, " I've finished Mythic Keystone: +", keyLevel, " - ", keystoneName)
 	else
-		if AMT_DB.replyInfoFriend["Time"] then
-			response = response
-				.. " - "
-				.. Mplus_AutoResponse.FormatSecond(elapsedTime)
-				.. "/"
-				.. Mplus_AutoResponse.FormatSecond(maxTime)
-		end
-		if AMT_DB.replyInfoFriend["Trash"] then
-			response = response .. " - " .. math.floor(Mplus_AutoResponse.runInfo.progressTrash) .. "% of trash"
-		end
-		if AMT_DB.replyInfoFriend["Boss"] then
-			response = response
-				.. " - "
-				.. Mplus_AutoResponse.runInfo.progressEncounter
-				.. "/"
-				.. Mplus_AutoResponse.runInfo.numEncounters
-				.. " bosses complete"
-		end
-		if AMT_DB.replyInfoFriend["Deaths"] then
-			response = response .. " - " .. deaths .. " deaths"
-		end
-		do
-			return Mplus_AutoResponse.prefix .. " I'm busy in Mythic Keystone: " .. response
-		end
+		local timeInfo = replyInfo["Time"] and concat(MplusAR.FormatSecond(elapsedTime), "/", MplusAR.FormatSecond(maxTime)) or nil
+		local trashInfo = replyInfo["Trash"] and concat(mathfloor(MplusAR_runInfo.progressTrash), "% of trash") or nil
+		local bossInfo = replyInfo["Boss"] and concat(MplusAR_runInfo.progressEncounter, "/", MplusAR_runInfo.numEncounters, " bosses complete") or nil
+		local deathInfo = replyInfo["Deaths"] and concat(deaths, " deaths") or nil
+		return CreateResponseString(keyLevel, keystoneName, timeInfo, trashInfo, bossInfo, deathInfo)
 	end
 end
 
@@ -222,14 +262,17 @@ function Mplus_AutoResponse.Reset()
 	end
 end
 
+-- Optimization 4: Use a local variable for math.floor
+local mathfloor = math.floor
+
 --- Format seconds to *XX:XX
 function Mplus_AutoResponse.FormatSecond(seconds)
 	if type(seconds) ~= "number" then
 		return "--:--"
 	end
 
-	local m = math.floor(seconds / 60)
-	local s = math.floor(seconds - (m * 60))
+	local m = mathfloor(seconds / 60)
+	local s = mathfloor(seconds - (m * 60))
 
 	if m < 10 then
 		m = "0" .. m
@@ -243,7 +286,7 @@ end
 
 ---Return name of keystone based on config
 function Mplus_AutoResponse.GetKeystoneName(type)
-	local abbr, name = AMT:Find_Dungeon(Mplus_AutoResponse.runInfo.challengeMapId)
+	local abbr, name = AMTFindDungeon(Mplus_AutoResponse.runInfo.challengeMapId)
 
 	if type == 1 or not name then
 		-- my language full
@@ -259,10 +302,13 @@ function Mplus_AutoResponse.GetKeystoneName(type)
 	return name
 end
 
+-- Optimization 3: Use a local variable for string matching
+local stringmatch = string.match
+
 ---Check if message sent by this aura, DBM, BW or something else from base
 function Mplus_AutoResponse.IsSpam(str)
 	for _, value in ipairs(Mplus_AutoResponse.spamBase) do
-		if str:match(value) then
+		if stringmatch(str, value) then
 			return true
 		end
 	end
@@ -273,102 +319,102 @@ end
 -- MARK: === Main Event ===
 -- ========================
 
+-- Optimization 9: Refactor AMT_AutoResponseEventHandler for better performance
 local function AMT_AutoResponseEventHandler(self, event, ...)
-	Mplus_AutoResponse.isActive = select(2, GetWorldElapsedTime(1)) > 0
+	MplusAR.isActive = select(2, GetWorldElapsedTime(1)) > 0
 	if event == "CHALLENGE_MODE_START" then
 		-- If a new key has started, but Mplus_AutoResponse.started is already true from a pprevious key, reset it.
-		AMT:PrintDebug(event .. " event triggered")
-		if Mplus_AutoResponse.started then
-			Mplus_AutoResponse.Reset()
+		AMTPrintDebug(concat(event, " event triggered"))
+		if MplusAR.started then
+			MplusAR.Reset()
 		end
-		Mplus_AutoResponse.Start()
+		MplusAR.Start()
 	elseif event == "CHALLENGE_MODE_DEATH_COUNT_UPDATED" then
 		-- When someone dies in the dungeon, update the deaths counter.
-		AMT:PrintDebug(event .. " event triggered")
-		Mplus_AutoResponse.runInfo.deaths = C_ChallengeMode.GetDeathCount()
+		AMTPrintDebug(concat(event, " event triggered"))
+		MplusAR_runInfo.deaths = C_ChallengeMode.GetDeathCount()
 	elseif event == "CHALLENGE_MODE_COMPLETED" then
 		-- When completing the dungeon update counters, send out final messages if needed and reset.
-		AMT:PrintDebug(event .. " event triggered")
-		Mplus_AutoResponse.UpdateProgress()
-		Mplus_AutoResponse.Complete()
-		Mplus_AutoResponse.Reset()
+		AMTPrintDebug(concat(event, " event triggered"))
+		MplusAR.UpdateProgress()
+		MplusAR.Complete()
+		MplusAR.Reset()
 	elseif event == "CHALLENGE_MODE_RESET" then
 		-- If dungeons are reset then reset the auto response variables.
-		AMT:PrintDebug(event .. " event triggered")
-		Mplus_AutoResponse.Reset()
-	elseif event == "CHAT_MSG_WHISPER" and Mplus_AutoResponse.isActive then
-		AMT:PrintDebug(event .. " event triggered")
+		AMTPrintDebug(concat(event, " event triggered"))
+		MplusAR.Reset()
+	elseif event == "CHAT_MSG_WHISPER" and MplusAR.isActive then
+		AMTPrintDebug(concat(event, " event triggered"))
 		local _, sender, _, _, _, flag, _, _, _, _, _, guid = ...
 		if flag ~= "GM" and flag ~= "DEV" then
 			-- If the whisperer is not a GM or a Dev
 			local trimmedPlayer = Ambiguate(sender, "none") -- grab the player name and realm if needed.
-			local time = GetTime()
+			local currentTime = GetTime()
 			if
 				-- If the person whispering is not in our group and a reply to said pperson is not on cooldown yet.
-				not UnitInRaid(trimmedPlayer)
-				and not UnitInParty(trimmedPlayer)
+				not IsPlayerInGroup(trimmedPlayer)
 				and (
-					not Mplus_AutoResponse.throttle[sender]
-					or time - Mplus_AutoResponse.throttle[sender] > (AMT_DB.replyCooldown * 60 + 5)
+					not MplusAR.throttle[sender]
+					or currentTime - MplusAR.throttle[sender] > (cachedAMT_DB.replyCooldown * 60 + 5)
 				)
 			then
-				AMT:PrintDebug("Not throttled")
-				if AMT_DB.antiSpam then
-					AMT:PrintDebug("AMT_DB.antiSpam is true")
-					if Mplus_AutoResponse.IsSpam(select(1, ...)) then
+				AMTPrintDebug("Not throttled")
+				if cachedAMT_DB.antiSpam then
+					AMTPrintDebug("AMT_DB.antiSpam is true")
+					if MplusAR.IsSpam(select(1, ...)) then
 						return false
 					end
 				end
-				if not Mplus_AutoResponse.UpdateProgress() then
-					AMT:PrintDebug("Returning false because not Mplus_AutoResponse.UpdateProgress()")
+				if not MplusAR.UpdateProgress() then
+					AMTPrintDebug("Returning false because not MplusAR.UpdateProgress()")
 					return false
 				end
-				Mplus_AutoResponse.throttle[sender] = time
+				MplusAR.throttle[sender] = currentTime
 				local msg
-				if select(2, C_BattleNet.GetGameAccountInfoByGUID(guid)) or C_FriendList.IsFriend(guid) then
-					AMT:PrintDebug("Whisperer is a friend")
-					if AMT_DB.replyAfterComplete == 1 then
-						Mplus_AutoResponse.toReply[sender] = Mplus_AutoResponse.responseTarget.friend
+				if C_BattleNet.GetGameAccountInfoByGUID(guid) or C_FriendList.IsFriend(guid) then
+					AMTPrintDebug("Whisperer is a friend")
+					if cachedAMT_DB.replyAfterComplete == 1 then
+						MplusAR.toReply[sender] = MplusAR_responseTarget.friend
 					end
-					msg = Mplus_AutoResponse.CreateResponse(Mplus_AutoResponse.responseTarget.friend, false)
+					msg = MplusAR.CreateResponse(MplusAR_responseTarget.friend, IsKeyCompleted())
 				elseif IsGuildMember(guid) then
-					AMT:PrintDebug("Whisperer is a guildie")
-					if AMT_DB.replyAfterComplete == 2 then
-						Mplus_AutoResponse.toReply[sender] = Mplus_AutoResponse.responseTarget.guild
+					AMTPrintDebug("Whisperer is a guildie")
+					if cachedAMT_DB.replyAfterComplete == 2 then
+						MplusAR.toReply[sender] = MplusAR_responseTarget.guild
 					end
-					msg = Mplus_AutoResponse.CreateResponse(Mplus_AutoResponse.responseTarget.guild, false)
+					msg = MplusAR.CreateResponse(MplusAR_responseTarget.guild, IsKeyCompleted())
 				else
-					AMT:PrintDebug("Whisperer is an unknown")
-					if AMT_DB.replyAfterComplete == 3 then
-						Mplus_AutoResponse.toReply[sender] = Mplus_AutoResponse.responseTarget.unknown
+					AMTPrintDebug("Whisperer is an unknown")
+					if cachedAMT_DB.replyAfterComplete == 3 then
+						MplusAR.toReply[sender] = MplusAR_responseTarget.unknown
 					end
-					msg = Mplus_AutoResponse.CreateResponse(Mplus_AutoResponse.responseTarget.unknown, false)
+					msg = MplusAR.CreateResponse(MplusAR_responseTarget.unknown, IsKeyCompleted())
 				end
 				if msg then
-					AMT:PrintDebug("Sending message")
+					AMTPrintDebug("Sending message")
 					SendChatMessage(msg, "WHISPER", nil, sender)
 				end
 			end
 		end
-	elseif event == "CHAT_MSG_BN_WHISPER" and Mplus_AutoResponse.isActive then
-		AMT:PrintDebug(event .. " event triggered")
+	elseif event == "CHAT_MSG_BN_WHISPER" and MplusAR.isActive then
+		AMTPrintDebug(concat(event, " event triggered"))
 		local bnSenderID = select(13, ...)
 		-- if not BNIsSelf(bnSenderID) and AMT_DB.replyInfoFriend[Mplus_AutoResponse.replyInfoType.key] then
 		if not BNIsSelf(bnSenderID) then
 			local time = GetTime()
 			if
-				not Mplus_AutoResponse.throttleBN[bnSenderID]
-				or time - Mplus_AutoResponse.throttleBN[bnSenderID] > (AMT_DB.replyCooldown * 60 + 5)
+				not MplusAR.throttleBN[bnSenderID]
+				or time - MplusAR.throttleBN[bnSenderID] > (AMT_DB.replyCooldown * 60 + 5)
 			then
-				AMT:PrintDebug("Not throttled")
+				AMTPrintDebug("Not throttled")
 				if AMT_DB.antiSpam then
-					AMT:PrintDebug("AMT_DB.antiSpam is true")
-					if Mplus_AutoResponse.IsSpam(select(1, ...)) then
+					AMTPrintDebug("AMT_DB.antiSpam is true")
+					if MplusAR.IsSpam(select(1, ...)) then
 						return false
 					end
 				end
-				if not Mplus_AutoResponse.UpdateProgress() then
-					AMT:PrintDebug("Returning false becausee not Mplus_AutoResponse.UpdateProgress()")
+				if not MplusAR.UpdateProgress() then
+					AMTPrintDebug("Returning false becausee not MplusAR.UpdateProgress()")
 					return false
 				end
 				local index = BNGetFriendIndex(bnSenderID)
@@ -385,10 +431,10 @@ local function AMT_AutoResponseEventHandler(self, event, ...)
 						end
 					end
 				end
-				local msg = Mplus_AutoResponse.CreateResponse(Mplus_AutoResponse.responseTarget.friend, false)
+				local msg = MplusAR.CreateResponse(MplusAR_responseTarget.friend, false)
 				if msg then
-					AMT:PrintDebug("Sending message")
-					Mplus_AutoResponse.throttleBN[bnSenderID] = time
+					AMTPrintDebug("Sending message")
+					MplusAR.throttleBN[bnSenderID] = time
 					BNSendWhisper(bnSenderID, msg)
 				end
 			end
@@ -412,7 +458,7 @@ ADDON_LOADED:SetScript("OnEvent", function(self, event, ...)
 			Mplus_AutoResponse.Start()
 		end
 		self:UnregisterEvent(event)
-		AMT:PrintDebug("Unregistering " .. event .. " for M+ Auto Response")
+		AMTPrintDebug("Unregistering " .. event .. " for M+ Auto Response")
 	end
 end)
 
@@ -425,9 +471,10 @@ function Mplus_AutoResponse:EnableShowKeys()
 	Mplus_AutoResponse:RegisterEvent("CHAT_MSG_WHISPER")
 	Mplus_AutoResponse:RegisterEvent("CHAT_MSG_BN_WHISPER")
 	Mplus_AutoResponse:RegisterEvent("CHALLENGE_MODE_DEATH_COUNT_UPDATED")
-	AMT:PrintDebug("Mplus_AutoResponse - Registering all events")
+	AMTPrintDebug("Mplus_AutoResponse - Registering all events")
 	Mplus_AutoResponse:Init()
 	self.enabled = true
+	UpdateCachedAMT_DB()
 end
 
 function Mplus_AutoResponse:DisableShowKeys()
@@ -437,7 +484,7 @@ function Mplus_AutoResponse:DisableShowKeys()
 		Mplus_AutoResponse:UnregisterEvent("CHAT_MSG_WHISPER")
 		Mplus_AutoResponse:UnregisterEvent("CHAT_MSG_BN_WHISPER")
 		Mplus_AutoResponse:UnregisterEvent("CHALLENGE_MODE_DEATH_COUNT_UPDATED")
-		AMT:PrintDebug("Mplus_AutoResponse - Unregistering all events ")
+		AMTPrintDebug("Mplus_AutoResponse - Unregistering all events ")
 	end
 	self.enabled = false
 end
@@ -676,10 +723,10 @@ do
 		if state then
 			Mplus_AutoResponse:EnableShowKeys()
 			AMT.DefaultValues["Mplus_AutoResponse"] = not AMT.DefaultValues["Mplus_AutoResponse"]
-			AMT:PrintDebug("Mplus_AutoResponse = " .. tostring(AMT.db["Mplus_AutoResponse"]))
+			AMTPrintDebug("Mplus_AutoResponse = " .. tostring(AMT.db["Mplus_AutoResponse"]))
 		else
 			Mplus_AutoResponse:DisableShowKeys()
-			AMT:PrintDebug("Mplus_AutoResponse = " .. tostring(AMT.db["Mplus_AutoResponse"]))
+			AMTPrintDebug("Mplus_AutoResponse = " .. tostring(AMT.db["Mplus_AutoResponse"]))
 		end
 	end
 
@@ -702,4 +749,13 @@ do
 	}
 
 	AMT.Config:AddModule(moduleData)
+end
+
+-- Optimization 10: Use a more efficient method for updating cached values
+function Mplus_AutoResponse.UpdateCachedValues()
+	for key, value in pairs(AMT_DB) do
+		if Mplus_AutoResponse["cached" .. key] ~= nil then
+			Mplus_AutoResponse["cached" .. key] = value
+		end
+	end
 end
