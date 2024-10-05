@@ -4,7 +4,7 @@ local API = AMT.API
 local BUTTON_MIN_SIZE = 27
 
 -- Optimize frequently used global functions
-local select, tinsert, floor, ipairs, unpack, time, GetTime = select, table.insert, math.floor, ipairs, unpack, time, GetTime
+local select, tinsert, floor, ipairs, unpack, time, GetTime, max = select, table.insert, math.floor, ipairs, unpack, time, GetTime, math.max
 local IsMouseButtonDown, GetMouseFocus, PlaySound = IsMouseButtonDown, API.GetMouseFocus, PlaySound
 local GetSpellCharges, C_Item, GetItemCount, GetItemIconByID = GetSpellCharges, C_Item, C_Item.GetItemCount, C_Item.GetItemIconByID
 local GetCVarBool, CreateFrame, UIParent = C_CVar.GetCVarBool, CreateFrame, UIParent
@@ -35,15 +35,12 @@ do -- Checkbox
 	local CheckboxMixin = {}
 
 	function CheckboxMixin:OnEnter()
-		if IsMouseButtonDown() then return end
-
-		if self.tooltip then
+		if not IsMouseButtonDown() and self.tooltip then
 			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 			GameTooltip:SetText(self.Label:GetText(), 1, 1, 1, true)
 			GameTooltip:AddLine(self.tooltip, 1, 0.82, 0, true)
 			GameTooltip:Show()
 		end
-
 		if self.onEnterFunc then self.onEnterFunc(self) end
 	end
 
@@ -54,22 +51,14 @@ do -- Checkbox
 
 	function CheckboxMixin:OnClick()
 		local newState = not (self.dbKey and GetDBValue(self.dbKey) or self:GetChecked())
-		
-		if self.dbKey then
-			SetDBValue(self.dbKey, newState)
-		end
-		
+		if self.dbKey then SetDBValue(self.dbKey, newState) end
 		self:SetChecked(newState)
-		
 		if self.onClickFunc then self.onClickFunc(self, newState) end
-		
 		PlaySound(newState and SFX_CHECKBOX_ON or SFX_CHECKBOX_OFF)
 		GameTooltip:Hide()
 	end
 
-	function CheckboxMixin:GetChecked()
-		return self.checked
-	end
+	function CheckboxMixin:GetChecked() return self.checked end
 
 	function CheckboxMixin:SetChecked(state)
 		self.CheckedTexture:SetShown(state)
@@ -90,25 +79,15 @@ do -- Checkbox
 		self.Label:SetText(label)
 		local width = self.Label:GetWrappedWidth() + LABEL_OFFSET
 		local lines = self.Label:GetNumLines()
-
+		local isMultiLine = lines > 1
 		self.Label:ClearAllPoints()
-		self.Label:SetPoint(lines > 1 and "TOPLEFT" or "LEFT", self, lines > 1 and "TOPLEFT" or "LEFT", LABEL_OFFSET, lines > 1 and -4 or 0)
-
-		if self.fixedWidth then
-			return self.fixedWidth
-		else
-			self:SetWidth(math.max(BUTTON_HITBOX_MIN_WIDTH, width))
-			return width
-		end
+		self.Label:SetPoint(isMultiLine and "TOPLEFT" or "LEFT", self, isMultiLine and "TOPLEFT" or "LEFT", LABEL_OFFSET, isMultiLine and -4 or 0)
+		return self.fixedWidth or (self:SetWidth(max(BUTTON_HITBOX_MIN_WIDTH, width)) and width)
 	end
 
 	function CheckboxMixin:SetData(data)
-		self.dbKey = data.dbKey
-		self.tooltip = data.tooltip
-		self.onClickFunc = data.onClickFunc
-		self.onEnterFunc = data.onEnterFunc
-		self.onLeaveFunc = data.onLeaveFunc
-
+		self.dbKey, self.tooltip = data.dbKey, data.tooltip
+		self.onClickFunc, self.onEnterFunc, self.onLeaveFunc = data.onClickFunc, data.onEnterFunc, data.onLeaveFunc
 		return data.label and self:SetLabel(data.label) or 0
 	end
 
@@ -156,33 +135,34 @@ do -- Checkbox
 		local b = CreateFrame("Button", name, parent)
 		b:SetSize(size, size)
 
-		b.Label = b:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+		b.Label = CreateFontString(b, nil, "OVERLAY", "GameFontNormal")
 		b.Label:SetJustifyH("LEFT")
 		b.Label:SetJustifyV("TOP")
 		b.Label:SetTextColor(1, 0.82, 0) --labelcolor
 		b.Label:SetPoint("LEFT", b, "LEFT", LABEL_OFFSET, 0)
 
-		b.Border = b:CreateTexture(nil, "ARTWORK")
+		local borderSize, checkedSize = size / 0.5, size / 1.5
+
+		b.Border = CreateTexture(b, nil, "ARTWORK")
 		b.Border:SetTexture("Interface/AddOns/AdvancedMythicTracker/Media/Button/Checkbox")
 		b.Border:SetTexCoord(0, 0.5, 0, 0.5)
 		b.Border:SetPoint("CENTER", b, "CENTER", 0, 0)
-		b.Border:SetSize(size / 0.5, size / 0.5)
+		b.Border:SetSize(borderSize, borderSize)
 		DisableSharpening(b.Border)
 
-		b.CheckedTexture = b:CreateTexture(nil, "OVERLAY")
+		b.CheckedTexture = CreateTexture(b, nil, "OVERLAY")
 		b.CheckedTexture:SetTexture("Interface/AddOns/AdvancedMythicTracker/Media/Button/Checkbox")
 		b.CheckedTexture:SetTexCoord(0.5, 0.75, 0.5, 0.75)
 		b.CheckedTexture:SetPoint("CENTER", b.Border, "CENTER", 0, 0)
-		b.CheckedTexture:SetSize(size / 1.5, size / 1.5)
+		b.CheckedTexture:SetSize(checkedSize, checkedSize)
 		DisableSharpening(b.CheckedTexture)
 		b.CheckedTexture:Hide()
 
-		b.Highlight = b:CreateTexture(nil, "HIGHLIGHT")
+		b.Highlight = CreateTexture(b, nil, "HIGHLIGHT")
 		b.Highlight:SetTexture("Interface/AddOns/AdvancedMythicTracker/Media/Button/Checkbox")
 		b.Highlight:SetTexCoord(0, 0.5, 0.5, 1)
 		b.Highlight:SetPoint("CENTER", b.Border, "CENTER", 0, 0)
-		b.Highlight:SetSize(size / 0.5, size / 0.5)
-		--b.Highlight:Hide();
+		b.Highlight:SetSize(borderSize, borderSize)
 		DisableSharpening(b.Highlight)
 
 		Mixin(b, CheckboxMixin)
@@ -731,15 +711,13 @@ end
 do --UIPanelButton
 	local UIPanelButtonMixin = {}
 
-	function UIPanelButtonMixin:OnClick(button) end
-
-	function UIPanelButtonMixin:OnMouseDown(button)
+	function UIPanelButtonMixin:OnMouseDown()
 		if self:IsEnabled() then
 			self.Background:SetTexture("Interface/AddOns/AdvancedMythicTracker/Media/Button/UIPanelButton-Down")
 		end
 	end
 
-	function UIPanelButtonMixin:OnMouseUp(button)
+	function UIPanelButtonMixin:OnMouseUp()
 		if self:IsEnabled() then
 			self.Background:SetTexture("Interface/AddOns/AdvancedMythicTracker/Media/Button/UIPanelButton-Up")
 		end
@@ -753,10 +731,6 @@ do --UIPanelButton
 		self.Background:SetTexture("Interface/AddOns/AdvancedMythicTracker/Media/Button/UIPanelButton-Up")
 	end
 
-	function UIPanelButtonMixin:OnEnter() end
-
-	function UIPanelButtonMixin:OnLeave() end
-
 	function UIPanelButtonMixin:SetButtonText(text)
 		self:SetText(text)
 	end
@@ -768,8 +742,6 @@ do --UIPanelButton
 
 		f:SetScript("OnMouseDown", f.OnMouseDown)
 		f:SetScript("OnMouseUp", f.OnMouseUp)
-		f:SetScript("OnEnter", f.OnEnter)
-		f:SetScript("OnLeave", f.OnLeave)
 		f:SetScript("OnEnable", f.OnEnable)
 		f:SetScript("OnDisable", f.OnDisable)
 
