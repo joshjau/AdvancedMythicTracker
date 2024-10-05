@@ -3,10 +3,10 @@ local API = AMT.API
 
 --Debugging Prints
 function AMT:PrintDebug(str)
-	if not self.db.DebugMode then
-		return
+	if not AMT.db then return end  -- Add this check
+	if AMT.db.debug then
+		print("|cff33ff99AMT Debug:|r", str)
 	end
-	print("|cff18a8ffAMT|r Debug: " .. str)
 end
 
 -- Function to update the highest key for a dungeon
