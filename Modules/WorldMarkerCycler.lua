@@ -4,6 +4,7 @@ local API = AMT.API
 -- Optimization 1: Cache frequently used functions
 local CreateFrame, IsInRaid, IsInGroup, InCombatLockdown, ClearRaidMarker = CreateFrame, IsInRaid, IsInGroup, InCombatLockdown, ClearRaidMarker
 local tinsert, format, pairs, ipairs = table.insert, string.format, pairs, ipairs
+local CreateAtlasMarkup = CreateAtlasMarkup
 
 local WorldMarkerCycler = CreateFrame("Frame")
 WorldMarkerCycler:RegisterEvent("ADDON_LOADED")
@@ -12,6 +13,14 @@ local order = {}
 
 -- Optimization 5: Use a local variable for frequently accessed global
 local AMT_DB = AMT_DB
+
+-- Error handling wrapper
+local function SafeExecute(func, ...)
+    local success, error = pcall(func, ...)
+    if not success then
+        AMT:PrintDebug("Error in WorldMarkerCycler: " .. tostring(error))
+    end
+end
 
 function WorldMarkerCycler:Placer_Init()
 	local Placer_Button = _G["WorldMarker_Placer"] or CreateFrame("Button", "WorldMarker_Placer", nil, "SecureActionButtonTemplate")
@@ -79,15 +88,15 @@ function WorldMarkerCycler:Remover_Init()
 end
 
 function WorldMarkerCycler:Init()
-	self:Placer_Init()
-	self:Remover_Init()
+	SafeExecute(self.Placer_Init, self)
+	SafeExecute(self.Remover_Init, self)
 end
 
 WorldMarkerCycler:SetScript("OnEvent", function(self, event, loadedAddonName)
 	if loadedAddonName == addonName then
 		self:UnregisterEvent(event)
 		order = AMT_DB.WorldMarkerCycler_Order
-		self:Init()
+		SafeExecute(self.Init, self)
 	end
 end)
 
@@ -133,9 +142,6 @@ local function ToggleWorldMarker(self)
 	WorldMarkerCycler:Init()
 end
 
--- Optimization 4: Cache CreateAtlasMarkup function
-local CreateAtlasMarkup = CreateAtlasMarkup
-
 function WorldMarkerCycler:CreateOptions()
 	if _G["AMT_Cycler_OptionsPane"] then
 		self.OptionFrame = _G["AMT_Cycler_OptionsPane"]
@@ -179,7 +185,7 @@ function WorldMarkerCycler:CloseImmediately()
 end
 
 function AMT:WorldMarkerCycler_ToggleConfig()
-	ShowOptions(WorldMarkerCycler, not (WorldMarkerCycler.OptionFrame and WorldMarkerCycler.OptionFrame:IsShown()))
+	SafeExecute(ShowOptions, WorldMarkerCycler, not (WorldMarkerCycler.OptionFrame and WorldMarkerCycler.OptionFrame:IsShown()))
 end
 
 do
@@ -191,7 +197,7 @@ do
 	end
 
 	local function OptionToggle_OnClick()
-		ShowOptions(WorldMarkerCycler, not (WorldMarkerCycler.OptionFrame and WorldMarkerCycler.OptionFrame:IsShown()))
+		SafeExecute(ShowOptions, WorldMarkerCycler, not (WorldMarkerCycler.OptionFrame and WorldMarkerCycler.OptionFrame:IsShown()))
 	end
 
 	local moduleData = {
@@ -205,4 +211,24 @@ do
 	}
 
 	AMT.Config:AddModule(moduleData)
+end
+
+-- Optional: Performance monitoring
+if AMT.DEBUG then
+	local debugProfilingStart = debugprofile
+	local debugProfilingEnd = debugprofile
+	
+	local function WrapWithProfiling(funcName, func)
+		return function(...)
+			local start = debugProfilingStart()
+			local result = {func(...)}
+			local end = debugProfilingEnd()
+			AMT:PrintDebug(format("%s took %.2fms", funcName, end - start))
+			return unpack(result)
+		end
+	end
+
+	WorldMarkerCycler.Placer_Init = WrapWithProfiling("Placer_Init", WorldMarkerCycler.Placer_Init)
+	WorldMarkerCycler.Remover_Init = WrapWithProfiling("Remover_Init", WorldMarkerCycler.Remover_Init)
+	WorldMarkerCycler.CreateOptions = WrapWithProfiling("CreateOptions", WorldMarkerCycler.CreateOptions)
 end
