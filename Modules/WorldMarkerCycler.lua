@@ -10,6 +10,9 @@ WorldMarkerCycler:RegisterEvent("ADDON_LOADED")
 
 local order = {}
 
+-- Optimization 5: Use a local variable for frequently accessed global
+local AMT_DB = AMT_DB
+
 function WorldMarkerCycler:Placer_Init()
 	local Placer_Button = _G["WorldMarker_Placer"] or CreateFrame("Button", "WorldMarker_Placer", nil, "SecureActionButtonTemplate")
 	
@@ -93,7 +96,9 @@ function WorldMarkerCycler:IsFocused()
 		   (self.OptionFrame and self.OptionFrame:IsShown() and self.OptionFrame:IsMouseOver())
 end
 
--- Optimization 3: Simplify ShowOptions function
+-- Optimization 6: Use upvalues for frequently accessed functions
+local ShowOptions, CreateOptions = WorldMarkerCycler.ShowOptions, WorldMarkerCycler.CreateOptions
+
 function WorldMarkerCycler:ShowOptions(state)
 	if not state then
 		if self.OptionFrame then
@@ -102,7 +107,7 @@ function WorldMarkerCycler:ShowOptions(state)
 		return
 	end
 
-	self:CreateOptions()
+	CreateOptions(self)
 	for i, marker in ipairs(AMT.WorldMarkers) do
 		local checkbox = _G["AMT_Cycler_" .. marker.icon .. "_Button"]
 		checkbox:SetChecked(AMT_DB["Cycler_" .. marker.icon])
@@ -113,11 +118,14 @@ function WorldMarkerCycler:ShowOptions(state)
 	self.OptionFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 end
 
+-- Optimization 7: Use a local variable to store the result of the loop
 local function ToggleWorldMarker(self)
 	local new_WorldMarkerCycler_Order = {}
+	local count = 0
 	for _, marker in ipairs(AMT.WorldMarkers) do
 		if AMT_DB["Cycler_" .. marker.icon] then
-			tinsert(new_WorldMarkerCycler_Order, marker.wmID)
+			count = count + 1
+			new_WorldMarkerCycler_Order[count] = marker.wmID
 		end
 	end
 	AMT_DB.WorldMarkerCycler_Order = new_WorldMarkerCycler_Order
@@ -137,9 +145,13 @@ function WorldMarkerCycler:CreateOptions()
 	local f = AMT:CreateOptionsPane("AMT_Cycler_OptionsPane")
 	f.Title:SetText("World Marker Cycler Options")
 
+	-- Optimization 8: Precalculate values outside the loop
+	local numWorldMarkers = #AMT.WorldMarkers
+	local firstFrameOffsetX, firstFrameOffsetY = 28, -16
+
 	for i, marker in ipairs(AMT.WorldMarkers) do
 		local WM_Frame = CreateFrame("Frame", "WMFrame" .. i, f)
-		WM_Frame:SetPoint("LEFT", i == 1 and f or _G["WMFrame" .. (i-1)], i == 1 and "LEFT" or "RIGHT", i == 1 and 28 or 0, i == 1 and -16 or 0)
+		WM_Frame:SetPoint("LEFT", i == 1 and f or _G["WMFrame" .. (i-1)], i == 1 and "LEFT" or "RIGHT", i == 1 and firstFrameOffsetX or 0, i == 1 and firstFrameOffsetY or 0)
 		WM_Frame:SetSize(48, 100)
 		
 		local tex = WM_Frame:CreateTexture()
@@ -147,7 +159,7 @@ function WorldMarkerCycler:CreateOptions()
 		tex:SetColorTexture(unpack(AMT.BackgroundClear))
 
 		local WM_Icon = WM_Frame:CreateFontString("WMIcon_" .. i, "OVERLAY", "GameFontNormalLarge")
-		WM_Icon:SetText(CreateAtlasMarkup("GM-raidMarker" .. (#AMT.WorldMarkers + 1 - i), 32, 32))
+		WM_Icon:SetText(CreateAtlasMarkup("GM-raidMarker" .. (numWorldMarkers + 1 - i), 32, 32))
 		WM_Icon:SetPoint("TOP", WM_Frame, "TOP", 0, -8)
 
 		local WM_Button = AMT.CreateCustomCheckbox(WM_Frame, "AMT_Cycler_" .. marker.icon .. "_Button", 28)
@@ -167,7 +179,7 @@ function WorldMarkerCycler:CloseImmediately()
 end
 
 function AMT:WorldMarkerCycler_ToggleConfig()
-	WorldMarkerCycler:ShowOptions(not (WorldMarkerCycler.OptionFrame and WorldMarkerCycler.OptionFrame:IsShown()))
+	ShowOptions(WorldMarkerCycler, not (WorldMarkerCycler.OptionFrame and WorldMarkerCycler.OptionFrame:IsShown()))
 end
 
 do
@@ -179,7 +191,7 @@ do
 	end
 
 	local function OptionToggle_OnClick()
-		WorldMarkerCycler:ShowOptions(not (WorldMarkerCycler.OptionFrame and WorldMarkerCycler.OptionFrame:IsShown()))
+		ShowOptions(WorldMarkerCycler, not (WorldMarkerCycler.OptionFrame and WorldMarkerCycler.OptionFrame:IsShown()))
 	end
 
 	local moduleData = {
