@@ -3,29 +3,21 @@ local API = AMT.API
 
 local BUTTON_MIN_SIZE = 27
 
+-- Optimize frequently used global functions
+local select, tinsert, floor, ipairs, unpack, time, GetTime = select, table.insert, math.floor, ipairs, unpack, time, GetTime
+local IsMouseButtonDown, GetMouseFocus, PlaySound = IsMouseButtonDown, API.GetMouseFocus, PlaySound
+local GetSpellCharges, C_Item, GetItemCount, GetItemIconByID = GetSpellCharges, C_Item, C_Item.GetItemCount, C_Item.GetItemIconByID
+local GetCVarBool, CreateFrame, UIParent = C_CVar.GetCVarBool, CreateFrame, UIParent
+
 local Mixin = API.Mixin
 
-local select = select
-local tinsert = table.insert
-local floor = math.floor
-local ipairs = ipairs
-local unpack = unpack
-local time = time
-local GetTime = GetTime
-local IsMouseButtonDown = IsMouseButtonDown
-local GetMouseFocus = API.GetMouseFocus
-local PlaySound = PlaySound
-local GetSpellCharges = GetSpellCharges
-local C_Item = C_Item
-local GetItemCount = C_Item.GetItemCount
-local GetItemIconByID = C_Item.GetItemIconByID
-local GetCVarBool = C_CVar.GetCVarBool
-local CreateFrame = CreateFrame
-local UIParent = UIParent
+-- Cache frequently used functions
+local GetDBValue, SetDBValue = AMT.GetDBValue, AMT.SetDBValue
+local PrintDebug = AMT.PrintDebug
 
-local IsMouseButtonDown = IsMouseButtonDown
-local PlaySound = PlaySound
-local CreateFrame = CreateFrame
+-- Cache frequently used methods
+local CreateFontString = CreateFrame("Frame").CreateFontString
+local CreateTexture = CreateFrame("Frame").CreateTexture
 
 local function DisableSharpening(texture)
 	texture:SetTexelSnappingBias(0)
@@ -43,54 +35,35 @@ do -- Checkbox
 	local CheckboxMixin = {}
 
 	function CheckboxMixin:OnEnter()
-		if IsMouseButtonDown() then
-			return
-		end
+		if IsMouseButtonDown() then return end
 
 		if self.tooltip then
-			GameTooltip:Hide()
 			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 			GameTooltip:SetText(self.Label:GetText(), 1, 1, 1, true)
 			GameTooltip:AddLine(self.tooltip, 1, 0.82, 0, true)
 			GameTooltip:Show()
 		end
 
-		if self.onEnterFunc then
-			self.onEnterFunc(self)
-		end
+		if self.onEnterFunc then self.onEnterFunc(self) end
 	end
 
 	function CheckboxMixin:OnLeave()
 		GameTooltip:Hide()
-
-		if self.onLeaveFunc then
-			self.onLeaveFunc(self)
-		end
+		if self.onLeaveFunc then self.onLeaveFunc(self) end
 	end
 
 	function CheckboxMixin:OnClick()
-		local newState
-
+		local newState = not (self.dbKey and GetDBValue(self.dbKey) or self:GetChecked())
+		
 		if self.dbKey then
-			newState = not AMT.GetDBValue(self.dbKey)
-			AMT.SetDBValue(self.dbKey, newState)
-			self:SetChecked(newState)
-		else
-			newState = not self:GetChecked()
-			self:SetChecked(newState)
-			AMT:PrintDebug("DB Key not assigned")
+			SetDBValue(self.dbKey, newState)
 		end
-
-		if self.onClickFunc then
-			self.onClickFunc(self, newState)
-		end
-
-		if self.checked then
-			PlaySound(SFX_CHECKBOX_ON)
-		else
-			PlaySound(SFX_CHECKBOX_OFF)
-		end
-
+		
+		self:SetChecked(newState)
+		
+		if self.onClickFunc then self.onClickFunc(self, newState) end
+		
+		PlaySound(newState and SFX_CHECKBOX_ON or SFX_CHECKBOX_OFF)
 		GameTooltip:Hide()
 	end
 
@@ -99,7 +72,6 @@ do -- Checkbox
 	end
 
 	function CheckboxMixin:SetChecked(state)
-		state = state or false
 		self.CheckedTexture:SetShown(state)
 		self.checked = state
 	end
@@ -110,23 +82,17 @@ do -- Checkbox
 	end
 
 	function CheckboxMixin:SetMaxWidth(maxWidth)
-		--this width includes box and label
 		self.Label:SetWidth(maxWidth - LABEL_OFFSET)
-		self.SetWidth(maxWidth)
+		self:SetWidth(maxWidth)
 	end
 
 	function CheckboxMixin:SetLabel(label)
 		self.Label:SetText(label)
 		local width = self.Label:GetWrappedWidth() + LABEL_OFFSET
-		local height = self.Label:GetHeight()
 		local lines = self.Label:GetNumLines()
 
 		self.Label:ClearAllPoints()
-		if lines > 1 then
-			self.Label:SetPoint("TOPLEFT", self, "TOPLEFT", LABEL_OFFSET, -4)
-		else
-			self.Label:SetPoint("LEFT", self, "LEFT", LABEL_OFFSET, 0)
-		end
+		self.Label:SetPoint(lines > 1 and "TOPLEFT" or "LEFT", self, lines > 1 and "TOPLEFT" or "LEFT", LABEL_OFFSET, lines > 1 and -4 or 0)
 
 		if self.fixedWidth then
 			return self.fixedWidth
@@ -143,31 +109,27 @@ do -- Checkbox
 		self.onEnterFunc = data.onEnterFunc
 		self.onLeaveFunc = data.onLeaveFunc
 
-		if data.label then
-			return self:SetLabel(data.label)
-		else
-			return 0
-		end
+		return data.label and self:SetLabel(data.label) or 0
 	end
 
 	local function CreateCheckbox(parent)
 		local b = CreateFrame("Button", nil, parent)
 		b:SetSize(BUTTON_MIN_SIZE, BUTTON_MIN_SIZE)
 
-		b.Label = b:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+		b.Label = CreateFontString(b, nil, "OVERLAY", "GameFontNormal")
 		b.Label:SetJustifyH("LEFT")
 		b.Label:SetJustifyV("TOP")
 		b.Label:SetTextColor(1, 0.82, 0) --labelcolor
 		b.Label:SetPoint("LEFT", b, "LEFT", LABEL_OFFSET, 0)
 
-		b.Border = b:CreateTexture(nil, "ARTWORK")
+		b.Border = CreateTexture(b, nil, "ARTWORK")
 		b.Border:SetTexture("Interface/AddOns/AdvancedMythicTracker/Media/Button/Checkbox")
 		b.Border:SetTexCoord(0, 0.5, 0, 0.5)
 		b.Border:SetPoint("CENTER", b, "LEFT", 8, 0)
 		b.Border:SetSize(36, 36)
 		DisableSharpening(b.Border)
 
-		b.CheckedTexture = b:CreateTexture(nil, "OVERLAY")
+		b.CheckedTexture = CreateTexture(b, nil, "OVERLAY")
 		b.CheckedTexture:SetTexture("Interface/AddOns/AdvancedMythicTracker/Media/Button/Checkbox")
 		b.CheckedTexture:SetTexCoord(0.5, 0.75, 0.5, 0.75)
 		b.CheckedTexture:SetPoint("CENTER", b.Border, "CENTER", 0, 0)
@@ -175,12 +137,11 @@ do -- Checkbox
 		DisableSharpening(b.CheckedTexture)
 		b.CheckedTexture:Hide()
 
-		b.Highlight = b:CreateTexture(nil, "HIGHLIGHT")
+		b.Highlight = CreateTexture(b, nil, "HIGHLIGHT")
 		b.Highlight:SetTexture("Interface/AddOns/AdvancedMythicTracker/Media/Button/Checkbox")
 		b.Highlight:SetTexCoord(0, 0.5, 0.5, 1)
 		b.Highlight:SetPoint("CENTER", b.Border, "CENTER", 0, 0)
 		b.Highlight:SetSize(36, 36)
-		--b.Highlight:Hide();
 		DisableSharpening(b.Highlight)
 
 		Mixin(b, CheckboxMixin)
@@ -812,14 +773,14 @@ do --UIPanelButton
 		f:SetScript("OnEnable", f.OnEnable)
 		f:SetScript("OnDisable", f.OnDisable)
 
-		f.Background = f:CreateTexture(nil, "BACKGROUND")
+		f.Background = CreateTexture(f, nil, "BACKGROUND")
 		f.Background:SetTexture("Interface/AddOns/AdvancedMythicTracker/Media/Button/UIPanelButton-Up")
 		f.Background:SetTextureSliceMargins(32, 16, 32, 16)
 		f.Background:SetTextureSliceMode(1)
 		f.Background:SetAllPoints(true)
 		DisableSharpening(f.Background)
 
-		f.Highlight = f:CreateTexture(nil, "HIGHLIGHT")
+		f.Highlight = CreateTexture(f, nil, "HIGHLIGHT")
 		f.Highlight:SetTexture("Interface/AddOns/AdvancedMythicTracker/Media/Button/UIPanelButton-Highlight")
 		f.Highlight:SetTextureSliceMargins(32, 16, 32, 16)
 		f.Highlight:SetTextureSliceMode(0)
