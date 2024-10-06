@@ -191,9 +191,19 @@ end
 do
 	local function EnableModule(state)
 		local Placer_Button = _G["WorldMarker_Placer"]
-		AMT.DefaultValues["WorldMarkerCycler"] = not AMT.DefaultValues["WorldMarkerCycler"]
-		Placer_Button:SetAttribute("enableMarkers", AMT.db["WorldMarkerCycler"])
-		AMT:PrintDebug("WorldMarkerCycler = " .. tostring(AMT.db["WorldMarkerCycler"]))
+		if not Placer_Button then
+			AMT:PrintDebug("WorldMarker_Placer button not found. Initializing WorldMarkerCycler.")
+			WorldMarkerCycler:Init()
+			Placer_Button = _G["WorldMarker_Placer"]
+		end
+		
+		if Placer_Button then
+			AMT.DefaultValues["WorldMarkerCycler"] = not AMT.DefaultValues["WorldMarkerCycler"]
+			Placer_Button:SetAttribute("enableMarkers", AMT.db["WorldMarkerCycler"])
+			AMT:PrintDebug("WorldMarkerCycler = " .. tostring(AMT.db["WorldMarkerCycler"]))
+		else
+			AMT:PrintDebug("Failed to create or find WorldMarker_Placer button.")
+		end
 	end
 
 	local function OptionToggle_OnClick()
