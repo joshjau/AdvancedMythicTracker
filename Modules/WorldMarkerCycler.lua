@@ -46,12 +46,19 @@ function WorldMarkerCycler:Placer_Init()
 		end
 	end)
 	
+	-- Check if order is empty and initialize it if necessary
+	if #order == 0 then
+		order = {1, 2, 3, 4, 5, 6, 7, 8}  -- Default order
+	end
+	
 	Placer_Button:SetAttribute("WorldMarker_Current", order[1])
 	Placer_Button:SetAttribute("WorldMarker_Previous", 0)
 
-	-- Optimization 2: Use string concatenation instead of table creation
-	local body = "order = " .. table.concat(order, ",")
-	SecureHandlerExecute(Placer_Button, body)
+	-- Set individual order elements as attributes
+	for i, v in ipairs(order) do
+		Placer_Button:SetAttribute("order" .. i, v)
+	end
+	Placer_Button:SetAttribute("orderCount", #order)
 
 	SecureHandlerWrapScript(
 		Placer_Button,
@@ -65,9 +72,10 @@ function WorldMarkerCycler:Placer_Init()
 			self:SetAttribute("macrotext", "/wm [@cursor]"..self:GetAttribute("WorldMarker_Current"))
 			local current = self:GetAttribute("WorldMarker_Current")
 			local previous = self:GetAttribute("WorldMarker_Previous")
-			local nextIndex = (previous == 0 and current == order[1]) and 2 or (i % #order + 1)
+			local orderCount = self:GetAttribute("orderCount")
+			local nextIndex = (previous == 0 and current == self:GetAttribute("order1")) and 2 or (i % orderCount + 1)
 			self:SetAttribute("WorldMarker_Previous", current)
-			self:SetAttribute("WorldMarker_Current", order[nextIndex])
+			self:SetAttribute("WorldMarker_Current", self:GetAttribute("order" .. nextIndex))
 		]=]
 	)
 end
