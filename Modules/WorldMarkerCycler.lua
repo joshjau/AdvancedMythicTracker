@@ -222,8 +222,8 @@ if AMT.DEBUG then
 		return function(...)
 			local start = debugProfilingStart()
 			local result = {func(...)}
-			local end = debugProfilingEnd()
-			AMT:PrintDebug(format("%s took %.2fms", funcName, end - start))
+			local endTime = debugProfilingEnd()
+			AMT:PrintDebug(format("%s took %.2fms", funcName, endTime - start))
 			return unpack(result)
 		end
 	end
