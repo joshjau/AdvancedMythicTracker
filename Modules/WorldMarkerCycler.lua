@@ -11,9 +11,6 @@ WorldMarkerCycler:RegisterEvent("ADDON_LOADED")
 
 local order = {}
 
--- Optimization 5: Use a local variable for frequently accessed global
-local AMT_DB = AMT_DB
-
 -- Error handling wrapper
 local function SafeExecute(func, ...)
     local success, error = pcall(func, ...)
@@ -103,8 +100,18 @@ end
 WorldMarkerCycler:SetScript("OnEvent", function(self, event, loadedAddonName)
 	if loadedAddonName == addonName then
 		self:UnregisterEvent(event)
-		order = AMT_DB.WorldMarkerCycler_Order
-		SafeExecute(self.Init, self)
+		-- Defer the initialization to ensure AMT.db is available
+		C_Timer.After(0, function()
+			if AMT.db and AMT.db.WorldMarkerCycler_Order then
+				order = AMT.db.WorldMarkerCycler_Order
+			else
+				order = {1, 2, 3, 4, 5, 6, 7, 8}  -- Default order
+				if AMT.db then
+					AMT.db.WorldMarkerCycler_Order = order
+				end
+			end
+			SafeExecute(self.Init, self)
+		end)
 	end
 end)
 
@@ -127,7 +134,7 @@ function WorldMarkerCycler:ShowOptions(state)
 	CreateOptions(self)
 	for i, marker in ipairs(AMT.WorldMarkers) do
 		local checkbox = _G["AMT_Cycler_" .. marker.icon .. "_Button"]
-		checkbox:SetChecked(AMT_DB["Cycler_" .. marker.icon])
+		checkbox:SetChecked(AMT.db["Cycler_" .. marker.icon])
 	end
 	self.OptionFrame:Show()
 	self.OptionFrame.requireResetPosition = false
@@ -140,13 +147,13 @@ local function ToggleWorldMarker(self)
 	local new_WorldMarkerCycler_Order = {}
 	local count = 0
 	for _, marker in ipairs(AMT.WorldMarkers) do
-		if AMT_DB["Cycler_" .. marker.icon] then
+		if AMT.db["Cycler_" .. marker.icon] then
 			count = count + 1
 			new_WorldMarkerCycler_Order[count] = marker.wmID
 		end
 	end
-	AMT_DB.WorldMarkerCycler_Order = new_WorldMarkerCycler_Order
-	order = AMT_DB.WorldMarkerCycler_Order
+	AMT.db.WorldMarkerCycler_Order = new_WorldMarkerCycler_Order
+	order = AMT.db.WorldMarkerCycler_Order
 	WorldMarkerCycler:Init()
 end
 
